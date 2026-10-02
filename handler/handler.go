@@ -166,6 +166,150 @@ func (h *Handler) ListTasks(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"tasks": tasks})
 }
 
+// GetScripts 获取脚本列表
+func (h *Handler) GetScripts(c *gin.Context) {
+	statusCode, body, err := h.callBetterGI("GET", "/api/scripts")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if statusCode != http.StatusOK {
+		c.JSON(statusCode, gin.H{"error": body})
+		return
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(body), &result); err != nil {
+		c.JSON(http.StatusOK, gin.H{"raw": body})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// StartScript 启动指定脚本
+func (h *Handler) StartScript(c *gin.Context) {
+	scriptID := c.Param("id")
+	if scriptID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "脚本ID不能为空"})
+		return
+	}
+
+	taskID := uuid.New().String()
+	task := &store.Task{
+		ID:        taskID,
+		Type:      "script",
+		Status:    "running",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	h.store.Add(task)
+
+	statusCode, body, err := h.callBetterGI("POST", "/api/script/"+scriptID+"/start")
+	if err != nil {
+		h.store.Update(taskID, "failed", err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if statusCode != http.StatusOK {
+		h.store.Update(taskID, "failed", fmt.Sprintf("HTTP %d: %s", statusCode, body))
+		c.JSON(statusCode, gin.H{"error": body})
+		return
+	}
+
+	h.store.Update(taskID, "completed", body)
+	c.JSON(http.StatusOK, gin.H{
+		"task_id": taskID,
+		"status":  "completed",
+		"result":  body,
+	})
+}
+
+// GetScreenshot 获取游戏截图
+func (h *Handler) GetScreenshot(c *gin.Context) {
+	statusCode, body, err := h.callBetterGI("GET", "/api/screenshot")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if statusCode != http.StatusOK {
+		c.JSON(statusCode, gin.H{"error": body})
+		return
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(body), &result); err != nil {
+		c.JSON(http.StatusOK, gin.H{"raw": body})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// GetOneDragonConfigs 获取一条龙配置列表
+func (h *Handler) GetOneDragonConfigs(c *gin.Context) {
+	statusCode, body, err := h.callBetterGI("GET", "/api/onedragon/configs")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if statusCode != http.StatusOK {
+		c.JSON(statusCode, gin.H{"error": body})
+		return
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(body), &result); err != nil {
+		c.JSON(http.StatusOK, gin.H{"raw": body})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// ExecuteOneDragon 执行一条龙配置
+func (h *Handler) ExecuteOneDragon(c *gin.Context) {
+	configName := c.Param("id")
+	if configName == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "配置名不能为空"})
+		return
+	}
+
+	taskID := uuid.New().String()
+	task := &store.Task{
+		ID:        taskID,
+		Type:      "onedragon",
+		Status:    "running",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+	h.store.Add(task)
+
+	statusCode, body, err := h.callBetterGI("POST", "/api/onedragon/execute/"+configName)
+	if err != nil {
+		h.store.Update(taskID, "failed", err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if statusCode != http.StatusOK {
+		h.store.Update(taskID, "failed", fmt.Sprintf("HTTP %d: %s", statusCode, body))
+		c.JSON(statusCode, gin.H{"error": body})
+		return
+	}
+
+	h.store.Update(taskID, "completed", body)
+	c.JSON(http.StatusOK, gin.H{
+		"task_id": taskID,
+		"status":  "completed",
+		"result":  body,
+	})
+}
+
 // Dashboard 控制面板页面
 func (h *Handler) Dashboard(c *gin.Context) {
 	c.HTML(http.StatusOK, "index.html", gin.H{

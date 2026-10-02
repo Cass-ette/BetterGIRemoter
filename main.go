@@ -41,6 +41,11 @@ func main() {
 		admin.POST("/stop", h.StopTask)
 		admin.GET("/status", h.GetStatus)
 		admin.GET("/tasks", h.ListTasks)
+		admin.GET("/scripts", h.GetScripts)
+		admin.POST("/script/:id/start", h.StartScript)
+		admin.GET("/screenshot", h.GetScreenshot)
+		admin.GET("/onedragon/configs", h.GetOneDragonConfigs)
+		admin.POST("/onedragon/execute/:id", h.ExecuteOneDragon)
 	}
 
 	// 静态文件（内嵌于二进制）

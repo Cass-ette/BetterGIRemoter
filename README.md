@@ -85,28 +85,35 @@ http://your-server:8000
 
 ## API 端点
 
-### 启动任务
+### 基础控制
 ```bash
-POST /admin/start
-Authorization: Bearer <ADMIN_TOKEN>
+POST /admin/start                    # 启动任务
+POST /admin/stop                     # 停止任务
+GET  /admin/status                   # 获取状态
+GET  /admin/tasks                    # 任务列表
 ```
 
-### 停止任务
+### 脚本管理
 ```bash
-POST /admin/stop
-Authorization: Bearer <ADMIN_TOKEN>
+GET  /admin/scripts                  # 获取所有脚本组
+POST /admin/script/{id}/start        # 启动指定脚本
 ```
 
-### 获取状态
+### 一条龙流程
 ```bash
-GET /admin/status
-Authorization: Bearer <ADMIN_TOKEN>
+GET  /admin/onedragon/configs        # 获取一条龙配置列表
+POST /admin/onedragon/execute/{id}   # 执行一条龙配置
 ```
 
-### 任务列表
+### 截图功能
 ```bash
-GET /admin/tasks
+GET  /admin/screenshot               # 获取游戏截图（Base64 PNG）
+```
+
+所有端点需要在 Header 中添加：
+```
 Authorization: Bearer <ADMIN_TOKEN>
+X-API-Token: <BETTERGI_TOKEN>
 ```
 
 ## 环境变量
