@@ -46,6 +46,7 @@ func main() {
 		admin.GET("/screenshot", h.GetScreenshot)
 		admin.GET("/onedragon/configs", h.GetOneDragonConfigs)
 		admin.POST("/onedragon/execute/:id", h.ExecuteOneDragon)
+		admin.POST("/bettergi/start", h.StartBetterGI)
 	}
 
 	// 静态文件（内嵌于二进制）

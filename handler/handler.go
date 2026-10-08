@@ -2,15 +2,20 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"time"
+
+	staticfiles "BetterGIRemoter/static"
+	"BetterGIRemoter/store"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"BetterGIRemoter/store"
 )
 
 type Handler struct {
@@ -71,6 +76,61 @@ func (h *Handler) callBetterGI(method, path string) (int, string, error) {
 	return resp.StatusCode, string(body), nil
 }
 
+// probeBetterGI 用短超时探测 BetterGI API 是否就绪
+func (h *Handler) probeBetterGI() error {
+	req, err := http.NewRequest("GET", h.bettergiURL+"/api/status", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-API-Token", h.bettergiToken)
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
+}
+
+// ensureBetterGI 确保 BetterGI 正在运行且 API 就绪；未运行则自动启动并等待就绪
+func (h *Handler) ensureBetterGI() error {
+	if err := h.probeBetterGI(); err == nil {
+		return nil
+	}
+
+	exe := os.Getenv("BETTERGI_EXE")
+	if exe == "" {
+		return errors.New("BetterGI 未运行，且未配置 BETTERGI_EXE 环境变量，无法自动启动")
+	}
+	if _, statErr := os.Stat(exe); statErr != nil {
+		return fmt.Errorf("BETTERGI_EXE 路径无效: %s", exe)
+	}
+
+	cmd := exec.Command(exe)
+	cmd.Dir = filepath.Dir(exe)
+	if startErr := cmd.Start(); startErr != nil {
+		return fmt.Errorf("启动 BetterGI 失败: %w", startErr)
+	}
+
+	// 等待 BetterGI 初始化完成（加载模型等需要时间），最多 90 秒
+	for i := 0; i < 90; i++ {
+		time.Sleep(1 * time.Second)
+		if err := h.probeBetterGI(); err == nil {
+			return nil
+		}
+	}
+	return errors.New("BetterGI 进程已启动，但 API 在 90 秒内未就绪，请检查 BetterGI 是否正常启动")
+}
+
+// StartBetterGI 显式启动 BetterGI（幂等：已运行则直接返回）
+func (h *Handler) StartBetterGI(c *gin.Context) {
+	if err := h.ensureBetterGI(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "BetterGI 已就绪"})
+}
+
 // StartTask 启动 BetterGI 任务
 func (h *Handler) StartTask(c *gin.Context) {
 	taskID := uuid.New().String()
@@ -82,6 +142,12 @@ func (h *Handler) StartTask(c *gin.Context) {
 		UpdatedAt: time.Now(),
 	}
 	h.store.Add(task)
+
+	if err := h.ensureBetterGI(); err != nil {
+		h.store.Update(taskID, "failed", err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	statusCode, body, err := h.callBetterGI("POST", "/api/start")
 	if err != nil {
@@ -206,6 +272,12 @@ func (h *Handler) StartScript(c *gin.Context) {
 	}
 	h.store.Add(task)
 
+	if err := h.ensureBetterGI(); err != nil {
+		h.store.Update(taskID, "failed", err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	statusCode, body, err := h.callBetterGI("POST", "/api/script/"+scriptID+"/start")
 	if err != nil {
 		h.store.Update(taskID, "failed", err.Error())
@@ -289,6 +361,12 @@ func (h *Handler) ExecuteOneDragon(c *gin.Context) {
 	}
 	h.store.Add(task)
 
+	if err := h.ensureBetterGI(); err != nil {
+		h.store.Update(taskID, "failed", err.Error())
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	statusCode, body, err := h.callBetterGI("POST", "/api/onedragon/execute/"+configName)
 	if err != nil {
 		h.store.Update(taskID, "failed", err.Error())
@@ -312,7 +390,10 @@ func (h *Handler) ExecuteOneDragon(c *gin.Context) {
 
 // Dashboard 控制面板页面
 func (h *Handler) Dashboard(c *gin.Context) {
-	c.HTML(http.StatusOK, "index.html", gin.H{
-		"bettergiURL": h.bettergiURL,
-	})
+	data, err := staticfiles.FS.ReadFile("index.html")
+	if err != nil {
+		c.String(http.StatusInternalServerError, "index.html not found")
+		return
+	}
+	c.Data(http.StatusOK, "text/html; charset=utf-8", data)
 }
